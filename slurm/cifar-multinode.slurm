@@ -20,7 +20,9 @@ source /hpcgpfs01/software/anaconda3/2019.03-py3.7/etc/profile.d/conda.sh
 # set up python environment
 conda activate torchenv
 
-srun --nodes=${SLURM_NNODES} python ../ddp/cifar10_ddp_multinode.py
+srun python ../ddp/cifar10_ddp_multinode.py
+
+
 
 conda deactivate
 
