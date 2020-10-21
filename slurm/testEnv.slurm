@@ -6,7 +6,7 @@
 #SBATCH --nodes=2
 #SBATCH --ntasks-per-node=2
 #SBATCH --gres=gpu:2
-#SBATCH -o ./multinode/testEnv.out
+#SBATCH -o ../JobOutputs/multinodeTestEnv.out
 
 echo "Testing the SLURM environment variables"
 
