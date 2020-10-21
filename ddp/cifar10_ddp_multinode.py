@@ -71,6 +71,7 @@ def example(rank, world_size, nodeid, processes_per_node):
     localrank = rank
     del rank
     globalrank = nodeid*processes_per_node + localrank
+    print(f"globalrank = {globalrank}")
     dist.init_process_group("gloo", rank=globalrank, world_size=world_size)
 
     # Training settings
