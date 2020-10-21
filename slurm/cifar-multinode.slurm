@@ -6,7 +6,7 @@
 #SBATCH --nodes=2
 #SBATCH --ntasks-per-node=2
 #SBATCH --gres=gpu:2
-#SBATCH -o ./multinode/maindebug-multinode.out
+#SBATCH -o ../JobOutputs/maindebug-cifar-multinode.out
 
 echo "running cifar10_ddp on $SLURM_NTASKS processors: $SLURM_NODELIST"
 
@@ -20,7 +20,7 @@ source /hpcgpfs01/software/anaconda3/2019.03-py3.7/etc/profile.d/conda.sh
 # set up python environment
 conda activate torchenv
 
-srun --nodes=${SLURM_NTASKS} python cifar10_ddp_multinode.py
+srun --nodes=${SLURM_NNODES} python ../ddp/cifar10_ddp_multinode.py
 
 conda deactivate
 
