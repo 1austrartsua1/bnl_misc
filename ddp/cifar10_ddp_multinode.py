@@ -71,7 +71,12 @@ def example(rank, world_size, nodeid, processes_per_node):
     localrank = rank
     del rank
     globalrank = nodeid*processes_per_node + localrank
+
     print(f"globalrank = {globalrank}")
+    print(f"world_size={world_size}")
+    print(f"nodeid={nodeid}")
+    print(f"processes_per_node={processes_per_node}")
+
     dist.init_process_group("gloo", rank=globalrank, world_size=world_size)
 
     # Training settings
@@ -129,7 +134,7 @@ def example(rank, world_size, nodeid, processes_per_node):
     parser.add_argument(
         "--data-root",
         type=str,
-        default="./cifar10",
+        default="../cifar10",
         help="Where MNIST is/will be stored",
     )
     parser.add_argument(
@@ -196,12 +201,12 @@ def example(rank, world_size, nodeid, processes_per_node):
 
         print("Trying to make model on globalrank", globalrank)
 
-        model = DDP(models.resnet18(num_classes=10).to(localrank), device_ids=[localrank])
+        model = DDP(models.resnet18(num_classes=10).to(globalrank), device_ids=[globalrank])
 
         optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0)
         for epoch in range(1, args.epochs + 1):
-            train(args, model, localrank, train_loader, optimizer, epoch)
-        run_results.append(test(args, model, localrank, test_loader))
+            train(args, model, globalrank, train_loader, optimizer, epoch)
+        run_results.append(test(args, model, globalrank, test_loader))
 
     if len(run_results) > 1:
         print(
@@ -221,16 +226,18 @@ def example(rank, world_size, nodeid, processes_per_node):
 
 
 def main():
-    processes_per_node = int(os.environ.get('SLURM_TASKS_PER_NODE').split('(')[0])
+    processes_per_node = int(os.environ.get('PROCESSES_PER_NODE'))
     numNodes = int(os.environ.get('SLURM_NNODES'))
     nodeid = int(os.environ.get('SLURM_NODEID'))
     world_size = numNodes*processes_per_node
+    
+    # print(f"processes_per_node={processes_per_node}")
 
     if world_size == None:
         print("Error: missing world size")
     mp.spawn(example,
              args=(world_size,nodeid,processes_per_node,),
-             nprocs=processes_per_node,
+             nprocs=world_size,
              join=True)
 
 
