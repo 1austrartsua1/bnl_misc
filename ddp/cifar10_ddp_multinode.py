@@ -220,7 +220,7 @@ def example(rank, world_size, nodeid, processes_per_node):
 
 
 def main():
-    processes_per_node = int(os.environ.get('SLURM_TASKS_PER_NODE'))
+    processes_per_node = int(os.environ.get('SLURM_TASKS_PER_NODE').split('(')[0])
     numNodes = int(os.environ.get('SLURM_NNODES'))
     nodeid = int(os.environ.get('SLURM_NODEID'))
     world_size = numNodes*processes_per_node
