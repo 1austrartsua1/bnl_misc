@@ -10,7 +10,7 @@
 
 echo "running cifar10_ddp..."
 
-export WORLD_SIZE=2
+export WORLD_SIZE=2 # WORLD_SIZE should be the total number of processes across all nodes, so WORLD_SIZE=nodes*ntasks_per_node
 export CUDA_VISIBLE_DEVICES=0,1
 export MASTER_PORT=7440
 export MASTER_ADDR=127.0.0.1
