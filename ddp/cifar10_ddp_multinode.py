@@ -17,6 +17,9 @@ from tqdm import tqdm
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torchvision.datasets import CIFAR10
 import os
+import time
+
+
 
 
 def train(args, model, device, train_loader, optimizer, epoch):
@@ -26,12 +29,11 @@ def train(args, model, device, train_loader, optimizer, epoch):
     for _batch_idx, (data, target) in enumerate(tqdm(train_loader)):
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
-
         output = model(data)
         loss = criterion(output, target)
         loss.backward()
-
         optimizer.step()
+        
 
         losses.append(loss.item())
 
@@ -66,19 +68,18 @@ def test(args, model, device, test_loader):
     return correct / len(test_loader.dataset)
 
 
-def example(rank, world_size, nodeid, processes_per_node):
+def example(rank, world_size, nodeid, processes_per_node,commType):
 
     localrank = rank
     del rank
     globalrank = nodeid*processes_per_node + localrank
 
-    print(f"globalrank = {globalrank}")
-    print(f"world_size={world_size}")
-    print(f"nodeid={nodeid}")
-    print(f"processes_per_node={processes_per_node}")
+    #print(f"globalrank = {globalrank}")
+    #print(f"world_size={world_size}")
+    #print(f"nodeid={nodeid}")
+    #print(f"processes_per_node={processes_per_node}")
 
-    dist.init_process_group("gloo", rank=globalrank, world_size=world_size)
-
+    dist.init_process_group(commType, rank=globalrank, world_size=world_size)
     # Training settings
     parser = argparse.ArgumentParser(description="PyTorch Example")
     parser.add_argument(
@@ -100,10 +101,11 @@ def example(rank, world_size, nodeid, processes_per_node):
         "-n",
         "--epochs",
         type=int,
-        default=10,
+        default=1,
         metavar="N",
         help="number of epochs to train (default: 14)",
     )
+    
     parser.add_argument(
         "-r",
         "--n-runs",
@@ -201,12 +203,28 @@ def example(rank, world_size, nodeid, processes_per_node):
 
         print("Trying to make model on globalrank", globalrank)
 
-        model = DDP(models.resnet18(num_classes=10).to(globalrank), device_ids=[globalrank])
+        model = DDP(models.resnet18(num_classes=10).to(localrank), device_ids=[localrank])
+        
+        print(f"model successfully build on globalrank {globalrank}")
 
         optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0)
+        
+        av_time_per_epoch = 0
         for epoch in range(1, args.epochs + 1):
-            train(args, model, globalrank, train_loader, optimizer, epoch)
-        run_results.append(test(args, model, globalrank, test_loader))
+            if (globalrank == 0) and (epoch > 1):
+                t_start_epoch = time.time()
+                
+            train(args, model, localrank, train_loader, optimizer, epoch)
+            
+            if (globalrank == 0) and (epoch > 1):
+                t_end_epoch = time.time()
+                av_time_per_epoch += t_end_epoch - t_start_epoch
+        
+        if (globalrank==0) and (args.epochs>1):
+            av_time_per_epoch /= (args.epochs-1)
+            print(f"av_time_per_epoch={av_time_per_epoch}")
+            
+        run_results.append(test(args, model, localrank, test_loader))
 
     if len(run_results) > 1:
         print(
@@ -226,19 +244,24 @@ def example(rank, world_size, nodeid, processes_per_node):
 
 
 def main():
+    t0 = time.time()
     processes_per_node = int(os.environ.get('PROCESSES_PER_NODE'))
+    commType = os.environ.get('COMM_BACKEND')
     numNodes = int(os.environ.get('SLURM_NNODES'))
     nodeid = int(os.environ.get('SLURM_NODEID'))
     world_size = numNodes*processes_per_node
     
-    # print(f"processes_per_node={processes_per_node}")
+    print(f"spawning {processes_per_node} processes on node {nodeid}")
 
     if world_size == None:
         print("Error: missing world size")
     mp.spawn(example,
-             args=(world_size,nodeid,processes_per_node,),
-             nprocs=world_size,
+             args=(world_size,nodeid,processes_per_node,commType),
+             nprocs=processes_per_node,
              join=True)
+    
+    t1 = time.time()
+    print(f"running time on node {nodeid}: {t1-t0}")
 
 
 if __name__ == "__main__":
