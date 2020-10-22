@@ -9,11 +9,6 @@
 
 echo "running cifar10_ddp on processors: $SLURM_NODELIST"
 
-echo "defining my environment variables"
-export PROCESSES_PER_NODE=2
-export COMM_BACKEND=gloo
-numEpochs=2
-
 
 echo "defining environment variables used by DDP"
 export CUDA_VISIBLE_DEVICES=0,1
@@ -31,7 +26,7 @@ conda activate torchenv
 
 echo "calling srun"
 
-srun --nodes=$SLURM_NNODES python ../ddp/cifar10_ddp_multinode.py --epochs $numEpochs
+srun --nodes=$SLURM_NNODES python ../ddp/cifar10_ddp_multinode.py --epochs 2 --processes_per_node 2 --comm_backend "gloo"
 
 conda deactivate
 

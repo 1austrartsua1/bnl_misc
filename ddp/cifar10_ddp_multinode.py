@@ -68,8 +68,9 @@ def test(args, model, device, test_loader):
     return correct / len(test_loader.dataset)
 
 
-def example(rank, world_size, nodeid, processes_per_node,commType):
-
+def example(rank, world_size, nodeid, processes_per_node,commType,cmdlineArgs):
+    
+    args = cmdlineArgs
     localrank = rank
     del rank
     globalrank = nodeid*processes_per_node + localrank
@@ -81,74 +82,7 @@ def example(rank, world_size, nodeid, processes_per_node,commType):
 
     dist.init_process_group(commType, rank=globalrank, world_size=world_size)
     # Training settings
-    parser = argparse.ArgumentParser(description="PyTorch Example")
-    parser.add_argument(
-        "-b",
-        "--batch-size",
-        type=int,
-        default=64,
-        metavar="B",
-        help="input batch size for training (default: 64)",
-    )
-    parser.add_argument(
-        "--test-batch-size",
-        type=int,
-        default=1024,
-        metavar="TB",
-        help="input batch size for testing (default: 1024)",
-    )
-    parser.add_argument(
-        "-n",
-        "--epochs",
-        type=int,
-        default=1,
-        metavar="N",
-        help="number of epochs to train (default: 14)",
-    )
-    
-    parser.add_argument(
-        "-r",
-        "--n-runs",
-        type=int,
-        default=1,
-        metavar="R",
-        help="number of runs to average on (default: 1)",
-    )
-    parser.add_argument(
-        "--lr",
-        type=float,
-        default=0.1,
-        metavar="LR",
-        help="learning rate (default: .1)",
-    )
-    parser.add_argument(
-        "--device",
-        type=str,
-        default="cuda",
-        help="GPU ID for this process (default: 'cuda')",
-    )
-    parser.add_argument(
-        "--save-model",
-        action="store_true",
-        default=False,
-        help="Save the trained model (default: false)",
-    )
-    parser.add_argument(
-        "--data-root",
-        type=str,
-        default="../cifar10",
-        help="Where MNIST is/will be stored",
-    )
-    parser.add_argument(
-        "-j",
-        "--workers",
-        default=1,
-        type=int,
-        metavar="N",
-        help="number of data loading workers (default: 1)",
-    )
-
-    args = parser.parse_args()
+   
     device = torch.device(args.device)
 
     args.batch_size = args.batch_size // world_size
@@ -245,8 +179,92 @@ def example(rank, world_size, nodeid, processes_per_node,commType):
 
 def main():
     t0 = time.time()
-    processes_per_node = int(os.environ.get('PROCESSES_PER_NODE'))
-    commType = os.environ.get('COMM_BACKEND')
+    
+    parser = argparse.ArgumentParser(description="PyTorch Example")
+    parser.add_argument(
+        "-b",
+        "--batch-size",
+        type=int,
+        default=64,
+        metavar="B",
+        help="input batch size for training (default: 64)",
+    )
+    parser.add_argument(
+        "--test-batch-size",
+        type=int,
+        default=1024,
+        metavar="TB",
+        help="input batch size for testing (default: 1024)",
+    )
+    parser.add_argument(
+        "-n",
+        "--epochs",
+        type=int,
+        default=1,
+        metavar="N",
+        help="number of epochs to train (default: 14)",
+    )
+    
+    parser.add_argument(
+        "-r",
+        "--n-runs",
+        type=int,
+        default=1,
+        metavar="R",
+        help="number of runs to average on (default: 1)",
+    )
+    parser.add_argument(
+        "--lr",
+        type=float,
+        default=0.1,
+        metavar="LR",
+        help="learning rate (default: .1)",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="cuda",
+        help="GPU ID for this process (default: 'cuda')",
+    )
+    parser.add_argument(
+        "--save-model",
+        action="store_true",
+        default=False,
+        help="Save the trained model (default: false)",
+    )
+    parser.add_argument(
+        "--data-root",
+        type=str,
+        default="../cifar10",
+        help="Where MNIST is/will be stored",
+    )
+    parser.add_argument(
+        "-j",
+        "--workers",
+        default=1,
+        type=int,
+        metavar="N",
+        help="number of data loading workers (default: 1)",
+    )
+
+    parser.add_argument(
+        "--processes_per_node",
+        default=1,
+        type=int,
+        metavar="P",
+        help="num processes to run on each node (1 for each GPU)",
+    )
+    parser.add_argument(
+        "--comm_backend",
+        default="gloo",
+        type=str,
+        help="communication backend for PyTorch distributed",
+    )
+    
+    cmdlineArgs = parser.parse_args()
+    
+    processes_per_node = cmdlineArgs.processes_per_node
+    commType = cmdlineArgs.comm_backend
     numNodes = int(os.environ.get('SLURM_NNODES'))
     nodeid = int(os.environ.get('SLURM_NODEID'))
     world_size = numNodes*processes_per_node
@@ -256,7 +274,7 @@ def main():
     if world_size == None:
         print("Error: missing world size")
     mp.spawn(example,
-             args=(world_size,nodeid,processes_per_node,commType),
+             args=(world_size,nodeid,processes_per_node,commType,cmdlineArgs),
              nprocs=processes_per_node,
              join=True)
     
