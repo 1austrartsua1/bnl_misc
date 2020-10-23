@@ -68,28 +68,28 @@ def test(args, model, device, test_loader):
     return correct / len(test_loader.dataset)
 
 
-def example(rank, world_size, nodeid, processes_per_node,commType,cmdlineArgs):
+def example(rank, world_size, nodeid,cmdlineArgs):
     
-    args = cmdlineArgs
+    
+    commType = cmdlineArgs.comm_backend
+    processes_per_node = cmdlineArgs.processes_per_node
+
+
     localrank = rank
     del rank
     globalrank = nodeid*processes_per_node + localrank
 
-    #print(f"globalrank = {globalrank}")
-    #print(f"world_size={world_size}")
-    #print(f"nodeid={nodeid}")
-    #print(f"processes_per_node={processes_per_node}")
-
     dist.init_process_group(commType, rank=globalrank, world_size=world_size)
+
     # Training settings
    
-    device = torch.device(args.device)
+    device = torch.device(cmdlineArgs.device)
 
-    args.batch_size = args.batch_size // world_size
+    cmdlineArgs.batch_size = cmdlineArgs.batch_size // world_size
 
-    print("Global Rank", globalrank, "World size", world_size, "Batch size", args.batch_size)
+    print("Global Rank", globalrank, "World size", world_size, "Batch size", cmdlineArgs.batch_size)
 
-    kwargs = {"num_workers": args.workers, "pin_memory": True}
+    kwargs = {"num_workers": cmdlineArgs.workers, "pin_memory": True}
 
     augmentations = [
         transforms.RandomCrop(32, padding=4),
@@ -106,7 +106,7 @@ def example(rank, world_size, nodeid, processes_per_node,commType,cmdlineArgs):
     test_transform = transforms.Compose(normalize)
 
     train_dataset = CIFAR10(
-        root=args.data_root, train=True, download=True, transform=train_transform
+        root=cmdlineArgs.data_root, train=True, download=True, transform=train_transform
     )
 
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset,
@@ -115,7 +115,7 @@ def example(rank, world_size, nodeid, processes_per_node,commType,cmdlineArgs):
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
-        batch_size=args.batch_size,
+        batch_size=cmdlineArgs.batch_size,
         shuffle=False,
         sampler=train_sampler,
         drop_last=True,
@@ -123,17 +123,17 @@ def example(rank, world_size, nodeid, processes_per_node,commType,cmdlineArgs):
     )
 
     test_dataset = CIFAR10(
-        root=args.data_root, train=False, download=True, transform=test_transform
+        root=cmdlineArgs.data_root, train=False, download=True, transform=test_transform
     )
     test_loader = torch.utils.data.DataLoader(
         test_dataset,
-        batch_size=args.batch_size,
+        batch_size=cmdlineArgs.batch_size,
         shuffle=False,
-        num_workers=args.workers,
+        num_workers=cmdlineArgs.workers,
     )
 
     run_results = []
-    for _ in range(args.n_runs):
+    for _ in range(cmdlineArgs.n_runs):
 
         print("Trying to make model on globalrank", globalrank)
 
@@ -141,24 +141,24 @@ def example(rank, world_size, nodeid, processes_per_node,commType,cmdlineArgs):
         
         print(f"model successfully build on globalrank {globalrank}")
 
-        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0)
+        optimizer = optim.SGD(model.parameters(), lr=cmdlineArgs.lr, momentum=0)
         
         av_time_per_epoch = 0
-        for epoch in range(1, args.epochs + 1):
+        for epoch in range(1, cmdlineArgs.epochs + 1):
             if (globalrank == 0) and (epoch > 1):
                 t_start_epoch = time.time()
                 
-            train(args, model, localrank, train_loader, optimizer, epoch)
+            train(cmdlineArgs, model, localrank, train_loader, optimizer, epoch)
             
             if (globalrank == 0) and (epoch > 1):
                 t_end_epoch = time.time()
                 av_time_per_epoch += t_end_epoch - t_start_epoch
         
-        if (globalrank==0) and (args.epochs>1):
-            av_time_per_epoch /= (args.epochs-1)
+        if (globalrank==0) and (cmdlineArgs.epochs>1):
+            av_time_per_epoch /= (cmdlineArgs.epochs-1)
             print(f"av_time_per_epoch={av_time_per_epoch}")
             
-        run_results.append(test(args, model, localrank, test_loader))
+        run_results.append(test(cmdlineArgs, model, localrank, test_loader))
 
     if len(run_results) > 1:
         print(
@@ -168,12 +168,12 @@ def example(rank, world_size, nodeid, processes_per_node,commType,cmdlineArgs):
         )
 
     repro_str = (
-        f"resnet_{args.lr}_"
-        f"{args.batch_size}_{args.epochs}"
+        f"resnet_{cmdlineArgs.lr}_"
+        f"{cmdlineArgs.batch_size}_{cmdlineArgs.epochs}"
     )
     torch.save(run_results, f"run_results_{repro_str}.pt")
 
-    if args.save_model:
+    if cmdlineArgs.save_model:
         torch.save(model.state_dict(), f"mnist_cnn_{repro_str}.pt")
 
 
@@ -264,7 +264,6 @@ def main():
     cmdlineArgs = parser.parse_args()
     
     processes_per_node = cmdlineArgs.processes_per_node
-    commType = cmdlineArgs.comm_backend
     numNodes = int(os.environ.get('SLURM_NNODES'))
     nodeid = int(os.environ.get('SLURM_NODEID'))
     world_size = numNodes*processes_per_node
@@ -274,7 +273,7 @@ def main():
     if world_size == None:
         print("Error: missing world size")
     mp.spawn(example,
-             args=(world_size,nodeid,processes_per_node,commType,cmdlineArgs),
+             args=(world_size,nodeid,cmdlineArgs),
              nprocs=processes_per_node,
              join=True)
     
