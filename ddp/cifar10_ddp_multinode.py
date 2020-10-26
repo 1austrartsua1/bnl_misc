@@ -22,7 +22,7 @@ import time
 
 
 
-def train(args, model, device, train_loader, optimizer, epoch):
+def train(model, device, train_loader, optimizer, epoch):
     model.train()
     criterion = nn.CrossEntropyLoss()
     losses = []
@@ -40,7 +40,7 @@ def train(args, model, device, train_loader, optimizer, epoch):
     print(f"Train Epoch: {epoch} \t Loss: {np.mean(losses):.6f}")
 
 
-def test(args, model, device, test_loader):
+def test(model, device, test_loader):
     model.eval()
     criterion = nn.CrossEntropyLoss()
     test_loss = 0
@@ -68,7 +68,7 @@ def test(args, model, device, test_loader):
     return correct / len(test_loader.dataset)
 
 
-def example(rank, world_size, nodeid,cmdlineArgs):
+def example(rank, world_size, nodeid, cmdlineArgs):
     
     
     commType = cmdlineArgs.comm_backend
@@ -148,7 +148,7 @@ def example(rank, world_size, nodeid,cmdlineArgs):
             if (globalrank == 0) and (epoch > 1):
                 t_start_epoch = time.time()
                 
-            train(cmdlineArgs, model, localrank, train_loader, optimizer, epoch)
+            train(model, localrank, train_loader, optimizer, epoch)
             
             if (globalrank == 0) and (epoch > 1):
                 t_end_epoch = time.time()
@@ -158,7 +158,7 @@ def example(rank, world_size, nodeid,cmdlineArgs):
             av_time_per_epoch /= (cmdlineArgs.epochs-1)
             print(f"av_time_per_epoch={av_time_per_epoch}")
             
-        run_results.append(test(cmdlineArgs, model, localrank, test_loader))
+        run_results.append(test(model, localrank, test_loader))
 
     if len(run_results) > 1:
         print(

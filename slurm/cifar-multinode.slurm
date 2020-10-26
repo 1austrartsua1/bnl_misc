@@ -1,11 +1,13 @@
 #!/bin/bash
-#SBATCH --partition debug
+#SBATCH --partition volta
 #SBATCH --time=30
 #SBATCH -A mlg-core
 #SBATCH --nodes=2
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:2
-#SBATCH -o ../JobOutputs/maindebug-cifar-multinode.out
+#SBATCH -o ../JobOutputs/volta-cifar-multinode.out
+#SBATCH --mail-user=patrick.r.johnstone@gmail.com
+#SBATCH --mail-type BEGIN,END
 
 
 
