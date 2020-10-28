@@ -137,7 +137,7 @@ def example(rank, world_size, nodeid, cmdlineArgs):
 
         print("Trying to make model on globalrank", globalrank)
 
-        model = DDP(models.resnet18(num_classes=10).to(localrank), device_ids=[localrank])
+        model = DDP(models.resnet18(num_classes=10).to(localrank), device_ids=[localrank],bucket_cap_mb=cmdlineArgs.bucket_cap)
         
         print(f"model successfully build on globalrank {globalrank}")
 
@@ -261,6 +261,13 @@ def main():
         help="communication backend for PyTorch distributed",
     )
     
+    parser.add_argument(
+        "--bucket_cap",
+        default=25,
+        type=int,
+        help="bucket cap for DDP",
+    )
+            
     cmdlineArgs = parser.parse_args()
     
     processes_per_node = cmdlineArgs.processes_per_node

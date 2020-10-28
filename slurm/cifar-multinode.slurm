@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --partition volta
+#SBATCH --partition debug
 #SBATCH --time=30
 #SBATCH -A mlg-core
-#SBATCH --nodes=2
+#SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=4 # each task (one task per node) spawns 2*numgpus subprocesses (one for each gpu, and each of these needs a worker for data loading, for a total of 2*numgpus cpus per 'task')
 #SBATCH --gres=gpu:2
-#SBATCH -o ../JobOutputs/volta-cifar-multinode.out
-#SBATCH --mail-user=patrick.r.johnstone@gmail.com
-#SBATCH --mail-type BEGIN,END
+#SBATCH -o ../JobOutputs/debug-cifar-multinode-multitask.out
+
 
 
 
@@ -34,7 +34,7 @@ conda activate torchenv
 echo "calling srun..."
 printf "\n\n\n"
 
-srun --nodes=$SLURM_NNODES python ../ddp/cifar10_ddp_multinode.py --epochs 2 --processes_per_node 2 --comm_backend "gloo"
+srun --nodes=$SLURM_NNODES python ../ddp/cifar10_ddp_multinode.py --epochs 2 --processes_per_node 2 --comm_backend "gloo" --bucket_cap 10
 
 conda deactivate
 
