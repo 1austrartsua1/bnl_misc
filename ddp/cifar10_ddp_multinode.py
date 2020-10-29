@@ -84,8 +84,12 @@ def example(rank, world_size, nodeid, cmdlineArgs):
     # Training settings
    
     device = torch.device(cmdlineArgs.device)
-
-    cmdlineArgs.batch_size = cmdlineArgs.batch_size // world_size
+    
+    if cmdlineArgs.scaling_type == "strong":
+        # strong scaling: keep total batchsize constant by cutting down the amount of work per GPU
+        # weak scaling: keep work done per GPU costant so that total batchsize grows as we add more GPUs.
+        print("XXXX Using Strong XXXX")
+        cmdlineArgs.batch_size = cmdlineArgs.batch_size // world_size
 
     print("Global Rank", globalrank, "World size", world_size, "Batch size", cmdlineArgs.batch_size)
 
@@ -136,14 +140,16 @@ def example(rank, world_size, nodeid, cmdlineArgs):
     for _ in range(cmdlineArgs.n_runs):
 
         print("Trying to make model on globalrank", globalrank)
-
+        
         model = DDP(models.resnet18(num_classes=10).to(localrank), device_ids=[localrank],bucket_cap_mb=cmdlineArgs.bucket_cap)
         
         print(f"model successfully build on globalrank {globalrank}")
 
         optimizer = optim.SGD(model.parameters(), lr=cmdlineArgs.lr, momentum=0)
         
-        av_time_per_epoch = 0
+        if globalrank == 0:
+            av_time_per_epoch = 0
+        
         for epoch in range(1, cmdlineArgs.epochs + 1):
             if (globalrank == 0) and (epoch > 1):
                 t_start_epoch = time.time()
@@ -156,7 +162,11 @@ def example(rank, world_size, nodeid, cmdlineArgs):
         
         if (globalrank==0) and (cmdlineArgs.epochs>1):
             av_time_per_epoch /= (cmdlineArgs.epochs-1)
-            print(f"av_time_per_epoch={av_time_per_epoch}")
+            print(f"\n\n\n av_time_per_epoch={av_time_per_epoch}")
+            print(f"number of samples in train set: {len(train_dataset)}")
+            print(f"num GPUs: {world_size}")
+            print(f"Av samples processed per second per GPU: {(len(train_dataset)/av_time_per_epoch)/world_size}")
+            print("\n\n\n")
             
         run_results.append(test(model, localrank, test_loader))
 
@@ -260,7 +270,12 @@ def main():
         type=str,
         help="communication backend for PyTorch distributed",
     )
-    
+    parser.add_argument(
+        "--scaling-type",
+        default="strong",
+        type=str,
+        help="scaling type to measure, weak or strong",
+    )
     parser.add_argument(
         "--bucket_cap",
         default=25,
