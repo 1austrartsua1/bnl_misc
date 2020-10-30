@@ -6,7 +6,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4 #TODO: set to 2*GPUsPerNode or (numWorkers+1)*GPUsPerNode 
 #SBATCH --gres=gpu:GPUsPerNode
-#SBATCH -o ../JobOutputs/DDP_Scaling/cifar-mypartition-myScalingType-greedy.out
+#SBATCH -o myResultsRoot/standardOuts/cifar-mypartition-myScalingType-myBatchSize.stdout
 #SBATCH --mail-user=myEmail
 #SBATCH --mail-type END
 

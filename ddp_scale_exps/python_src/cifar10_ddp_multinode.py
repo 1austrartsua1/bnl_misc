@@ -71,6 +71,8 @@ def test(model, device, test_loader):
 def example(rank, world_size, nodeid, cmdlineArgs):
     
     
+    
+    
     commType = cmdlineArgs.comm_backend
     processes_per_node = cmdlineArgs.processes_per_node
 
@@ -78,6 +80,8 @@ def example(rank, world_size, nodeid, cmdlineArgs):
     localrank = rank
     del rank
     globalrank = nodeid*processes_per_node + localrank
+    if globalrank == 0:
+        tstartexample = time.time()
 
     dist.init_process_group(commType, rank=globalrank, world_size=world_size)
 
@@ -88,7 +92,6 @@ def example(rank, world_size, nodeid, cmdlineArgs):
     if cmdlineArgs.scaling_type == "strong":
         # strong scaling: keep total batchsize constant by cutting down the amount of work per GPU
         # weak scaling: keep work done per GPU costant so that total batchsize grows as we add more GPUs.
-        print("XXXX Using Strong XXXX")
         cmdlineArgs.batch_size = cmdlineArgs.batch_size // world_size
 
     print("Global Rank", globalrank, "World size", world_size, "Batch size", cmdlineArgs.batch_size)
@@ -161,12 +164,30 @@ def example(rank, world_size, nodeid, cmdlineArgs):
                 av_time_per_epoch += t_end_epoch - t_start_epoch
         
         if (globalrank==0) and (cmdlineArgs.epochs>1):
+            if cmdlineArgs.write_scaling_results:
+                nodename = os.environ.get('MASTER_ADDR')
+                dataset = "cifar"
+                outputfile = open(cmdlineArgs.results_root+dataset+"-"+nodename+"-"+cmdlineArgs.scaling_type+"-"+str(world_size)+"-"+str(cmdlineArgs.batch_size)+".pyout","w+")
+                outputfile.write(f"batch-size: {cmdlineArgs.batch_size}\n epochs: {cmdlineArgs.epochs}\nprocesses per node: {cmdlineArgs.processes_per_node}\n")
+                outputfile.write(f"comm backend: {cmdlineArgs.comm_backend}\nscaling type: {cmdlineArgs.scaling_type}\nbucket-cap: {cmdlineArgs.bucket_cap}\n")
+                outputfile.write("\n\n\n results: \n")
+                
             av_time_per_epoch /= (cmdlineArgs.epochs-1)
-            print(f"\n\n\n av_time_per_epoch={av_time_per_epoch}")
+            print(f"\n\n\nav_time_per_epoch={av_time_per_epoch}")
             print(f"number of samples in train set: {len(train_dataset)}")
             print(f"num GPUs: {world_size}")
             print(f"Av samples processed per second per GPU: {(len(train_dataset)/av_time_per_epoch)/world_size}")
+            tendexample = time.time()
+            print(f"total running time of example() on globalrank 0: {tendexample-tstartexample}")
             print("\n\n\n")
+            if cmdlineArgs.write_scaling_results:
+                outputfile.write(f"av_time_per_epoch={av_time_per_epoch}\n")
+                outputfile.write(f"number of samples in train set: {len(train_dataset)}\n")
+                outputfile.write(f"num GPUs: {world_size}\n")
+                outputfile.write(f"Av samples processed per second per GPU: {(len(train_dataset)/av_time_per_epoch)/world_size}\n")
+                outputfile.write(f"total running time of example() on globalrank 0: {tendexample-tstartexample}\n")
+                outputfile.close()
+            
             
         run_results.append(test(model, localrank, test_loader))
 
@@ -181,10 +202,14 @@ def example(rank, world_size, nodeid, cmdlineArgs):
         f"resnet_{cmdlineArgs.lr}_"
         f"{cmdlineArgs.batch_size}_{cmdlineArgs.epochs}"
     )
-    torch.save(run_results, f"run_results_{repro_str}.pt")
+    
 
+    if cmdlineArgs.saveModelResults:
+        torch.save(run_results, f"run_results_{repro_str}.pt")
+        
     if cmdlineArgs.save_model:
         torch.save(model.state_dict(), f"mnist_cnn_{repro_str}.pt")
+        
 
 
 def main():
@@ -243,6 +268,12 @@ def main():
         help="Save the trained model (default: false)",
     )
     parser.add_argument(
+        "--saveModelResults",
+        action="store_true",
+        default=False,
+        help="Save the model results (default: false)",
+    )
+    parser.add_argument(
         "--data-root",
         type=str,
         default="../cifar10",
@@ -282,8 +313,22 @@ def main():
         type=int,
         help="bucket cap for DDP",
     )
-            
+    parser.add_argument(
+        "--write_scaling_results",
+        default=True,
+        type=int,
+        help="Whether to create an output file summarizing the results",
+    )
+    parser.add_argument(
+        "--results_root",
+        default="./",
+        type=str,
+        help="where you want the results file to be saved",
+    )
+    
     cmdlineArgs = parser.parse_args()
+    
+    
     
     processes_per_node = cmdlineArgs.processes_per_node
     numNodes = int(os.environ.get('SLURM_NNODES'))
@@ -301,6 +346,7 @@ def main():
     
     t1 = time.time()
     print(f"running time on node {nodeid}: {t1-t0}")
+    
 
 
 if __name__ == "__main__":
