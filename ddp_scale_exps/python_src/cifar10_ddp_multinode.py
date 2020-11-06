@@ -7,7 +7,7 @@ import numpy as np
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
-import torchvision.models as models
+import torchvision.models
 import torchvision.transforms as transforms
 import torch.nn as nn
 import torch.nn.functional as F
@@ -18,6 +18,8 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torchvision.datasets import CIFAR10
 import os
 import time
+
+from randomDataLoader import MyRandomDataSet
 
 
 
@@ -33,11 +35,12 @@ def train(model, device, train_loader, optimizer, epoch):
         loss = criterion(output, target)
         loss.backward()
         optimizer.step()
-        
+
 
         losses.append(loss.item())
 
     print(f"Train Epoch: {epoch} \t Loss: {np.mean(losses):.6f}")
+    return np.mean(losses)
 
 
 def test(model, device, test_loader):
@@ -68,15 +71,9 @@ def test(model, device, test_loader):
     return correct / len(test_loader.dataset)
 
 
-def example(rank, world_size, nodeid, cmdlineArgs):
-    
-    
-    
-    
+def example(rank, world_size, nodeid, cmdlineArgs, train_dataset, test_dataset):
     commType = cmdlineArgs.comm_backend
     processes_per_node = cmdlineArgs.processes_per_node
-
-
     localrank = rank
     del rank
     globalrank = nodeid*processes_per_node + localrank
@@ -86,9 +83,9 @@ def example(rank, world_size, nodeid, cmdlineArgs):
     dist.init_process_group(commType, rank=globalrank, world_size=world_size)
 
     # Training settings
-   
+
     device = torch.device(cmdlineArgs.device)
-    
+
     if cmdlineArgs.scaling_type == "strong":
         # strong scaling: keep total batchsize constant by cutting down the amount of work per GPU
         # weak scaling: keep work done per GPU costant so that total batchsize grows as we add more GPUs.
@@ -96,82 +93,108 @@ def example(rank, world_size, nodeid, cmdlineArgs):
 
     print("Global Rank", globalrank, "World size", world_size, "Batch size", cmdlineArgs.batch_size)
 
-    kwargs = {"num_workers": cmdlineArgs.workers, "pin_memory": True}
+    if not cmdlineArgs.random_data:
+        print("using cifar10 dataset")
 
-    augmentations = [
-        transforms.RandomCrop(32, padding=4),
-        transforms.RandomHorizontalFlip(),
-    ]
-    normalize = [
-        transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    ]
-    train_transform = transforms.Compose(
-        augmentations + normalize
-    )
 
-    test_transform = transforms.Compose(normalize)
+        augmentations = [
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+        ]
+        normalize = [
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ]
+        train_transform = transforms.Compose(
+            augmentations + normalize
+        )
 
-    train_dataset = CIFAR10(
-        root=cmdlineArgs.data_root, train=True, download=True, transform=train_transform
-    )
+        test_transform = transforms.Compose(normalize)
 
-    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset,
-                                                                    num_replicas=world_size,
-                                                                    rank=globalrank)
+        train_dataset = CIFAR10(
+            root=cmdlineArgs.data_root, train=True, download=True, transform=train_transform
+        )
+
+
+        test_dataset = CIFAR10(
+            root=cmdlineArgs.data_root, train=False, download=True, transform=test_transform
+        )
+        nlabels = 10
+
+    else:
+        print("using randomly generated data")
+        nlabels = cmdlineArgs.random_nlabels
+
+
+
+
+    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset,num_replicas=world_size,rank=globalrank)
 
     train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=cmdlineArgs.batch_size,
-        shuffle=False,
-        sampler=train_sampler,
-        drop_last=True,
-        **kwargs
-    )
-
-    test_dataset = CIFAR10(
-        root=cmdlineArgs.data_root, train=False, download=True, transform=test_transform
-    )
+                train_dataset,
+                batch_size=cmdlineArgs.batch_size,
+                shuffle=False, # set shuffle to false because the DistributedSampler already shuffles by default
+                sampler=train_sampler,
+                drop_last=True,
+                num_workers=cmdlineArgs.workers,
+                pin_memory= True
+            )
     test_loader = torch.utils.data.DataLoader(
-        test_dataset,
-        batch_size=cmdlineArgs.batch_size,
-        shuffle=False,
-        num_workers=cmdlineArgs.workers,
-    )
+                test_dataset,
+                batch_size=cmdlineArgs.batch_size,
+                shuffle=False,
+                num_workers=cmdlineArgs.workers,
+            )
+
+
 
     run_results = []
     for _ in range(cmdlineArgs.n_runs):
 
         print("Trying to make model on globalrank", globalrank)
-        
-        model = DDP(models.resnet18(num_classes=10).to(localrank), device_ids=[localrank],bucket_cap_mb=cmdlineArgs.bucket_cap)
-        
+
+        Model = getattr(torchvision.models, cmdlineArgs.model)
+        model = DDP(Model(num_classes=nlabels).to(localrank), device_ids=[localrank],bucket_cap_mb=cmdlineArgs.bucket_cap)
+
         print(f"model successfully build on globalrank {globalrank}")
 
         optimizer = optim.SGD(model.parameters(), lr=cmdlineArgs.lr, momentum=0)
-        
+
         if globalrank == 0:
             av_time_per_epoch = 0
-        
+
         for epoch in range(1, cmdlineArgs.epochs + 1):
+
+            train_sampler.set_epoch(epoch)
             if (globalrank == 0) and (epoch > 1):
                 t_start_epoch = time.time()
-                
-            train(model, localrank, train_loader, optimizer, epoch)
-            
+
+            av_losses = train(model, localrank, train_loader, optimizer, epoch)
+
             if (globalrank == 0) and (epoch > 1):
                 t_end_epoch = time.time()
                 av_time_per_epoch += t_end_epoch - t_start_epoch
-        
+
         if (globalrank==0) and (cmdlineArgs.epochs>1):
             if cmdlineArgs.write_scaling_results:
                 nodename = os.environ.get('MASTER_ADDR')
-                dataset = "cifar"
+                if cmdlineArgs.random_data:
+                    dataset = "random"
+                else:
+                    dataset = "cifar"
                 outputfile = open(cmdlineArgs.results_root+dataset+"-"+nodename+"-"+cmdlineArgs.scaling_type+"-"+str(world_size)+"-"+str(cmdlineArgs.batch_size)+".pyout","w+")
-                outputfile.write(f"batch-size: {cmdlineArgs.batch_size}\n epochs: {cmdlineArgs.epochs}\nprocesses per node: {cmdlineArgs.processes_per_node}\n")
+                outputfile.write(f"node name:{nodename}\n")
+                outputfile.write(f"batch-size: {cmdlineArgs.batch_size}\nepochs: {cmdlineArgs.epochs}\nprocesses per node: {cmdlineArgs.processes_per_node}\n")
                 outputfile.write(f"comm backend: {cmdlineArgs.comm_backend}\nscaling type: {cmdlineArgs.scaling_type}\nbucket-cap: {cmdlineArgs.bucket_cap}\n")
-                outputfile.write("\n\n\n results: \n")
-                
+                outputfile.write(f"model = {cmdlineArgs.model}\n")
+                outputfile.write(f"number of samples in train set: {len(train_dataset)}\n")
+                outputfile.write(f"num GPUs: {world_size}\n")
+                outputfile.write("\n\n\nresults\n\n\n")
+
+                if cmdlineArgs.random_data:
+                    outputfile.write(f"dimension of (square) input image: {cmdlineArgs.random_data_dim}\n")
+                    outputfile.write(f"num labels of random data: {cmdlineArgs.random_nlabels}\n")
+
             av_time_per_epoch /= (cmdlineArgs.epochs-1)
             print(f"\n\n\nav_time_per_epoch={av_time_per_epoch}")
             print(f"number of samples in train set: {len(train_dataset)}")
@@ -182,13 +205,12 @@ def example(rank, world_size, nodeid, cmdlineArgs):
             print("\n\n\n")
             if cmdlineArgs.write_scaling_results:
                 outputfile.write(f"av_time_per_epoch={av_time_per_epoch}\n")
-                outputfile.write(f"number of samples in train set: {len(train_dataset)}\n")
-                outputfile.write(f"num GPUs: {world_size}\n")
+                outputfile.write(f"final av loss = {av_losses}\n")
                 outputfile.write(f"Av samples processed per second per GPU: {(len(train_dataset)/av_time_per_epoch)/world_size}\n")
                 outputfile.write(f"total running time of example() on globalrank 0: {tendexample-tstartexample}\n")
                 outputfile.close()
-            
-            
+
+
         run_results.append(test(model, localrank, test_loader))
 
     if len(run_results) > 1:
@@ -202,19 +224,19 @@ def example(rank, world_size, nodeid, cmdlineArgs):
         f"resnet_{cmdlineArgs.lr}_"
         f"{cmdlineArgs.batch_size}_{cmdlineArgs.epochs}"
     )
-    
+
 
     if cmdlineArgs.saveModelResults:
         torch.save(run_results, f"run_results_{repro_str}.pt")
-        
+
     if cmdlineArgs.save_model:
         torch.save(model.state_dict(), f"mnist_cnn_{repro_str}.pt")
-        
+
 
 
 def main():
     t0 = time.time()
-    
+
     parser = argparse.ArgumentParser(description="PyTorch Example")
     parser.add_argument(
         "-b",
@@ -239,7 +261,7 @@ def main():
         metavar="N",
         help="number of epochs to train (default: 14)",
     )
-    
+
     parser.add_argument(
         "-r",
         "--n-runs",
@@ -325,28 +347,62 @@ def main():
         type=str,
         help="where you want the results file to be saved",
     )
-    
+    parser.add_argument(
+        "--random_data",
+        action="store_true",
+        default=False,
+        help="use random data rather than cifar10"
+    )
+    parser.add_argument(
+        "--random_data_dim",
+        default=32,
+        type=int,
+        help="image dims of random data, which will be square (default: 32)"
+    )
+    parser.add_argument(
+        "--random_data_num",
+        default=100000,
+        type=int,
+        help="number of data points for random data (defaults to 100k)"
+    )
+    parser.add_argument(
+        "--random_nlabels",
+        default=10,
+        type=int,
+        help="number of labels for random data  (default: 10)"
+    )
+    parser.add_argument("--model",
+                        default="resnet18",
+                        type=str,
+                        help="specify a model from torchvision (default is resnet18)"
+                        )
+
     cmdlineArgs = parser.parse_args()
-    
-    
-    
+
+
+    if cmdlineArgs.random_data:
+        train_dataset = MyRandomDataSet(cmdlineArgs.random_data_dim,cmdlineArgs.random_data_dim,cmdlineArgs.random_data_num,cmdlineArgs.random_nlabels)
+        test_dataset = MyRandomDataSet(cmdlineArgs.random_data_dim,cmdlineArgs.random_data_dim,1,cmdlineArgs.random_nlabels)
+    else:
+        train_dataset,test_dataset = None,None
+
     processes_per_node = cmdlineArgs.processes_per_node
     numNodes = int(os.environ.get('SLURM_NNODES'))
     nodeid = int(os.environ.get('SLURM_NODEID'))
     world_size = numNodes*processes_per_node
-    
+
     print(f"spawning {processes_per_node} processes on node {nodeid}")
 
     if world_size == None:
         print("Error: missing world size")
     mp.spawn(example,
-             args=(world_size,nodeid,cmdlineArgs),
+             args=(world_size,nodeid,cmdlineArgs, train_dataset, test_dataset),
              nprocs=processes_per_node,
              join=True)
-    
+
     t1 = time.time()
     print(f"running time on node {nodeid}: {t1-t0}")
-    
+
 
 
 if __name__ == "__main__":
