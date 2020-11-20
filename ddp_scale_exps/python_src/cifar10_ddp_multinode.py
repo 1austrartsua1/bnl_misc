@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 
+# externals
 import argparse
-
+import datetime
 import numpy as np
 import torch
 import torch.distributed as dist
@@ -19,6 +20,7 @@ from torchvision.datasets import CIFAR10
 import os
 import time
 
+# locals
 from randomDataLoader import MyRandomDataSet
 
 
@@ -182,7 +184,9 @@ def example(rank, world_size, nodeid, cmdlineArgs, train_dataset, test_dataset):
                     dataset = "random"
                 else:
                     dataset = "cifar"
-                outputfile = open(cmdlineArgs.results_root+dataset+"-"+nodename+"-"+cmdlineArgs.scaling_type+"-"+str(world_size)+"-"+str(cmdlineArgs.batch_size)+".pyout","w+")
+                fname = cmdlineArgs.results_root+dataset+"-"+nodename+"-"+cmdlineArgs.scaling_type+"-"+str(world_size)+"-"+str(cmdlineArgs.batch_size)
+                fname += '-'+str(datetime.datetime.now()) + ".pyout"
+                outputfile = open(fname,"w+")
                 outputfile.write(f"node name:{nodename}\n")
                 outputfile.write(f"batch-size: {cmdlineArgs.batch_size}\nepochs: {cmdlineArgs.epochs}\nprocesses per node: {cmdlineArgs.processes_per_node}\n")
                 outputfile.write(f"comm backend: {cmdlineArgs.comm_backend}\nscaling type: {cmdlineArgs.scaling_type}\nbucket-cap: {cmdlineArgs.bucket_cap}\n")
