@@ -325,37 +325,37 @@ def main():
         "--comm_backend",
         default="gloo",
         type=str,
-        help="communication backend for PyTorch distributed",
+        help="communication backend for PyTorch distributed (default: gloo)",
     )
     parser.add_argument(
         "--scaling-type",
-        default="strong",
+        default="weak",
         type=str,
-        help="scaling type to measure, weak or strong",
+        help="scaling type to measure, weak or strong (default: weak)",
     )
     parser.add_argument(
         "--bucket_cap",
         default=25,
         type=int,
-        help="bucket cap for DDP",
+        help="bucket cap for DDP (default: 25mb)",
     )
     parser.add_argument(
         "--write_scaling_results",
         default=True,
         type=int,
-        help="Whether to create an output file summarizing the results",
+        help="Whether to create an output file summarizing the results (default: true)",
     )
     parser.add_argument(
         "--results_root",
         default="./",
         type=str,
-        help="where you want the results file to be saved",
+        help="where you want the results file to be saved (default: ./)",
     )
     parser.add_argument(
         "--random_data",
         action="store_true",
         default=False,
-        help="use random data rather than cifar10"
+        help="use random data rather than cifar10 (default: false)"
     )
     parser.add_argument(
         "--random_data_dim",

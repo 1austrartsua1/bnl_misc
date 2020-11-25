@@ -4,34 +4,39 @@
 # the nice variant runs each setting as a different job setting with the correct amount of resources
 
 #inputs
-maxGPUs=4
-maxGPUsPerNode=2
-mycomm_backend=gloo
-mypartition=debug
+cluster=cori
+maxGPUs=8
+maxGPUsPerNode=8
+mycomm_backend=nccl
+mypartition=ignore
 bucket_cap=10
 batch_size=128 # for weak scaling this is batchsize per GPU, for strong scaling this is total batch_size
-num_epochs=2
+num_epochs=3
 scaling_type=weak
-sbatch_running_time=30
+sbatch_running_time=60
 cpus_per_task=4
 
-random_data=false
+random_data=true
 random_data_dim=400
-random_data_num=10000
+random_data_num=500
 random_nlabels=10
 
-write_scale_results=0
+write_scale_results=1
 my_email=none # set to None if you don't want email
 
-data_root='/sdcc/u/pjohnston/bnl_misc/datasets/cifar10' # location of the data
-src_file='/sdcc/u/pjohnston/bnl_misc/ddp_scale_exps/python_src/cifar10_ddp_multinode.py' # python source file including full path
-results_root='/sdcc/u/pjohnston/bnl_misc/ddp_scale_exps/results' # where you want the results (python outputs will be in /pyOuts, standard output in /standardOuts
+
+data_root='~/bnl_misc/datasets/cifar10' # location of the data
+src_file='~/bnl_misc/ddp_scale_exps/python_src/cifar10_ddp_multinode.py' # python source file including full path
+results_root='~/bnl_misc/ddp_scale_exps/results' # where you want the results (python outputs will be in /pyOuts, standard output in /standardOuts
+
+
+
 
 gpusPerNode=1
 totalgpus=1
 nodes=1
 
-cat template.slurm > torun.sbatch
+cat ${cluster}_template.slurm > torun.sbatch
 
 maxNodes=$(expr $maxGPUs / $maxGPUsPerNode)
 

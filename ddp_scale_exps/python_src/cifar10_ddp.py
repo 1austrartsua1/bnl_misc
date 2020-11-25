@@ -67,7 +67,7 @@ def test(args, model, device, test_loader):
 
 def example(rank,world_size):
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
-    
+
     # Training settings
     parser = argparse.ArgumentParser(description="PyTorch Example")
     parser.add_argument(
@@ -139,7 +139,7 @@ def example(rank,world_size):
     device = torch.device(args.device)
 
     args.batch_size = args.batch_size//world_size
-    
+
     print("Rank", rank, "World size", world_size, "Batch size", args.batch_size)
 
     kwargs = {"num_workers": args.workers, "pin_memory": True}
@@ -153,7 +153,7 @@ def example(rank,world_size):
         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
     ]
     train_transform = transforms.Compose(
-    augmentations + normalize 
+    augmentations + normalize
     )
 
     test_transform = transforms.Compose(normalize)
@@ -165,7 +165,7 @@ def example(rank,world_size):
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset,
                                                                     num_replicas=world_size,
                                                                     rank=rank)
-  
+
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=args.batch_size,
@@ -189,7 +189,7 @@ def example(rank,world_size):
     for _ in range(args.n_runs):
 
         print("Trying to make model on rank",rank)
-        
+
         model = DDP(models.resnet18(num_classes=10).to(rank),device_ids=[rank])
 
         optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0)
