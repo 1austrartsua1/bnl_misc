@@ -5,29 +5,35 @@
 
 #inputs
 cluster=cori
-maxGPUs=8
+maxGPUs=128
 maxGPUsPerNode=8
 mycomm_backend=nccl
-mypartition=ignore
-bucket_cap=10
+mypartition=\-
+bucket_cap=25
 batch_size=128 # for weak scaling this is batchsize per GPU, for strong scaling this is total batch_size
-num_epochs=3
+num_epochs=10
 scaling_type=weak
-sbatch_running_time=60
+sbatch_running_time=120
 cpus_per_task=4
+learning_rate=0.00001
+model=resnet50
+
+exclusive_node=true
+qos_flag=true
+jobname=ddp_nccl_repeat
 
 random_data=true
-random_data_dim=400
-random_data_num=500
+random_data_dim=200
+random_data_num=2000
 random_nlabels=10
 
 write_scale_results=1
-my_email=none # set to None if you don't want email
+my_email=patrick.r.johnstone@gmail.com # set to None if you don't want email
 
 
-data_root='~/bnl_misc/datasets/cifar10' # location of the data
-src_file='~/bnl_misc/ddp_scale_exps/python_src/cifar10_ddp_multinode.py' # python source file including full path
-results_root='~/bnl_misc/ddp_scale_exps/results' # where you want the results (python outputs will be in /pyOuts, standard output in /standardOuts
+data_root='/global/homes/p/pjohnsto/bnl_misc/datasets/cifar10' # location of the data
+src_file='/global/homes/p/pjohnsto/bnl_misc/ddp_scale_exps/python_src/cifar10_ddp_multinode.py' # python source file including full path
+results_root='/global/homes/p/pjohnsto/bnl_misc/ddp_scale_exps/results' # where you want the results (python outputs will be in /pyOuts, standard output in /standardOuts
 
 
 
@@ -37,6 +43,21 @@ totalgpus=1
 nodes=1
 
 cat ${cluster}_template.slurm > torun.sbatch
+
+if [ $exclusive_node = false ]
+then
+  cat torun.sbatch | sed 's|#SBATCH --exclusive||' > temp
+  cat temp > torun.sbatch
+  rm temp
+fi
+
+if [ $qos_flag = false ]
+then
+  cat torun.sbatch | sed 's|#SBATCH -q special||' > temp
+  cat temp > torun.sbatch
+  rm temp
+fi
+
 
 maxNodes=$(expr $maxGPUs / $maxGPUsPerNode)
 
@@ -61,6 +82,9 @@ while [ $totalgpus -le $maxGPUs ]; do
     sruncmd=$sruncmd" --batch-size $batch_size --bucket_cap $bucket_cap --scaling-type $scaling_type"
     sruncmd=$sruncmd" --write_scaling_results $write_scale_results --data-root "$data_root
     sruncmd=$sruncmd" --results_root "$results_root"/pyOuts/"
+    sruncmd=$sruncmd" --lr "$learning_rate
+    sruncmd=$sruncmd" --model "$model
+
 
     if [ $random_data = true ]
     then
@@ -94,6 +118,7 @@ templateMapping[myEmail]=$my_email
 templateMapping[myResultsRoot]=$results_root
 templateMapping[myRunningTime]=$sbatch_running_time
 templateMapping[myCPUsPerTask]=$cpus_per_task
+templateMapping[myJobName]=$jobname
 
 if [ $random_data = true ]
 then

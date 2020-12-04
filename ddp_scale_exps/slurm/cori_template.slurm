@@ -10,7 +10,7 @@
 #SBATCH -o /global/homes/p/pjohnsto/bnl_misc/ddp_scale_exps/results/standardOuts/mydataset-mypartition-myScalingType-NumOfNodesxGPUsPerNode.stdout
 #SBATCH --mail-user=myEmail
 #SBATCH --mail-type BEGIN,END
-#SBATCH --job-name=DDP
+#SBATCH --job-name=myJobName
 #SBATCH -q special
 
-module load pytorch/v1.5.1-gpu
+module load pytorch/v1.6.0-gpu
